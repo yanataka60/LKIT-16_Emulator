@@ -1,0 +1,17 @@
+<?xml version='1.0' encoding='utf-8'?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003" DefaultTargets="Build">
+ <ItemGroup Label="ProjectConfigurations">
+  <ProjectConfiguration Include="Debug|Win32"><Configuration>Debug</Configuration><Platform>Win32</Platform></ProjectConfiguration>
+  <ProjectConfiguration Include="Release|Win32"><Configuration>Release</Configuration><Platform>Win32</Platform></ProjectConfiguration>
+  <ProjectConfiguration Include="Debug|x64"><Configuration>Debug</Configuration><Platform>x64</Platform></ProjectConfiguration>
+  <ProjectConfiguration Include="Release|x64"><Configuration>Release</Configuration><Platform>x64</Platform></ProjectConfiguration>
+ </ItemGroup>
+ <PropertyGroup Label="Globals"><VCProjectVersion>17.0</VCProjectVersion><Keyword>Win32Proj</Keyword><ProjectGuid>{4B246F1A-A47A-4D50-A12B-6C98E71A1610}</ProjectGuid><RootNamespace>Lkit16Emulator</RootNamespace><WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion></PropertyGroup>
+ <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+ <PropertyGroup Condition="'$(Configuration)'=='Debug'" Label="Configuration"><ConfigurationType>Application</ConfigurationType><UseDebugLibraries>true</UseDebugLibraries><PlatformToolset>v143</PlatformToolset><CharacterSet>Unicode</CharacterSet></PropertyGroup>
+ <PropertyGroup Condition="'$(Configuration)'=='Release'" Label="Configuration"><ConfigurationType>Application</ConfigurationType><UseDebugLibraries>false</UseDebugLibraries><PlatformToolset>v143</PlatformToolset><WholeProgramOptimization>false</WholeProgramOptimization><CharacterSet>Unicode</CharacterSet></PropertyGroup>
+ <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+ <PropertyGroup><OutDir>$(MSBuildProjectDirectory)\bin\$(Platform)\$(Configuration)\</OutDir><IntDir>$(MSBuildProjectDirectory)\obj\$(Platform)\$(Configuration)\</IntDir></PropertyGroup><ItemDefinitionGroup><ClCompile><AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions><LanguageStandard>stdcpp17</LanguageStandard><WarningLevel>Level3</WarningLevel><DebugInformationFormat>OldStyle</DebugInformationFormat></ClCompile><Link><SubSystem>Windows</SubSystem><GenerateDebugInformation>false</GenerateDebugInformation></Link></ItemDefinitionGroup>
+ <ItemGroup><ClCompile Include="main.cpp" /></ItemGroup>
+ <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+<ItemGroup><ResourceCompile Include="Lkit16Emulator.rc" /><None Include="Lkit16Emulator.ico" /><None Include="resource.h" /><ClInclude Include="tv_font_file.h" /></ItemGroup></Project>

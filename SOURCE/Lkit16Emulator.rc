@@ -1,0 +1,3 @@
+﻿#include "resource.h"
+IDI_LKIT16 ICON "Lkit16Emulator.ico"
+
