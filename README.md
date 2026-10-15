@@ -5,7 +5,7 @@
 
 　また、BASIC-ROM、CG-ROMのバイナリファイルがあればBASICも動作可能です。
 
-## MONITOR-ROMの吸い出し
+## MONITOR-ROMの吸い出し(必須)
 　大きく分けて３つの方法があると思います。
 
 ### 1)自力で吸い出せる方
@@ -89,14 +89,27 @@
 
 　LKIT-16 ROM.binが出来上がるはずです。
 
+## BASIC-ROMの吸い出し(任意)
+　BASIC-ROMも同様に吸い出します。BASIC-ROMの配置アドレスは次の通りです。
+
+|配置先（ワードアドレス）|作成ファイル名|サイズ|
+| ------------ | ------------ | ------------ | ------------ |
+|0500H～08FFH|BASIC-ROM1.Bin|2,048バイト|
+|D800H～DFFFH|BASIC-ROM2.Bin|4,096バイト|
+
+## CG-ROMの吸い出し(任意)
+　CG-ROMはプログラムでは読み出せないので吸い出す必要があります。
+
+　吸い出せない方は、Windowsフォントから疑似的にフォントファイルを作ることが出来ます。
+
+　LKIT-16 Emulatorのツールから「WindowsフォントからTVフォントを作成」を実行してください。元とするフォントを選んでOKをクリックすると保存ファイル名の入力になります。
+
+　TVFONT.BINと入力されていますのでそのまま「保存」をクリックすればTVFONT.BINが出来上がります。
+
+　次回LKIT-16 Emulator起動時に読み込まれるようになります。
+
 ## 使い方
-　まず、MONITOR-ROMを吸い出す必要があります。
-
-　吸い出す術がわからない方はユーザーズマニュアルに掲載されているアセンブルリストを入力するという手もあるかもしれません。
-
-　基板上で左側のROM(上位バイト)の内容をLKIT-16 ROM_A.bin、右側(下位バイト)の内容をLKIT-16 ROM_B.binとしてください。
-
-　適当なフォルダにLkit16Emulator.exe、LKIT-16 ROM_A.bin、LKIT-16 ROM_B.binを置き、ダブルクリック等で起動させます。
+　適当なフォルダにLkit16Emulator.exe、LKIT-16 ROM.binを置き、ダブルクリック等で起動させます。
 
 　起動した状態でメインパネルが操作可能になります。
 
@@ -152,72 +165,8 @@
 ![CMT](https://github.com/yanataka60/Ramda-1-Emulator/blob/main/PNG/CMT.png)
 
 ### BASIC起動
-　BASIC-ROMのバイナリファイル、CG-ROMのバイナリファイルが必要です。CG-ROMはWindowsフォントから疑似的に作ることが可能です。
+　BASIC-ROMのバイナリファイル、CG-ROMのバイナリファイルが必要です。
 
-　MONITOR-ROMと同様にBASIC-ROMの内容を抽出し、BASIC-ROM1.Bin
+　MONITOR-ROMと同様にLkit16Emulator.exeと同じフォルダにBASIC-ROM1.Bin、BASIC-ROM2.Bin、TVFONT.binを置いておいてください。起動時に読み込まれます。
 
-　
-　RAMの内容が確認できます。表示のみで書き換えることはできません。
-
-![Memory Disp](https://github.com/yanataka60/Ramda-1-Emulator/blob/main/PNG/Memory%20Disp.png)
-
-### プリンタ
-　拡張PIA#2へのプリンタ出力がそのまま表示されます。
-
-　出力ファイルを指定して「受信データをテキストファイルに書き出す」をチェックすればテキストファイルとして保存も出来ます。
-
-![Printer](https://github.com/yanataka60/Ramda-1-Emulator/blob/main/PNG/Printer.png)
-
-### 電子オルガン
-　このパネルを表示しなくても電子オルガンは接続済みです。手動でオルガンから音を出すためのものです。
-
-![Organ](https://github.com/yanataka60/Ramda-1-Emulator/blob/main/PNG/Organ.png)
-
-## ソフトウェア
-### CHICK-BUG
-　Ramda1Emulator.exeと同じフォルダにCHICK-BUG.binがある状態で起動するとアドレスがFE78にセットされ、カラーTVディスプレイのウィンドウが表示されます。
-
-![CHICK-BUG1](https://github.com/yanataka60/Ramda-1-Emulator/blob/main/PNG/CHICK-BUG1.png)
-
-　この状態でGO-SWを操作するとCHICK-BUGが起動し、ATNキーを押すことでコマンド待ちになります。
-
-![CHICK-BUG2](https://github.com/yanataka60/Ramda-1-Emulator/blob/main/PNG/CHICK-BUG2.png)
-
-![CHICK-BUG3](https://github.com/yanataka60/Ramda-1-Emulator/blob/main/PNG/CHICK-BUG3.png)
-
-　操作はパソコンのキーボードか、又は表示メニューから仮想フルキーボードを表示させて操作することも出来ます。
-
-![Keyboard](https://github.com/yanataka60/Ramda-1-Emulator/blob/main/PNG/KeyBoard.png)
-
-　メインパネル、カラーTVディスプレイ、仮想フルキーボード、RAMモニタのいずれかがアクティブなときにはWindowsキーボードから操作が出来ます。
-
-　Windowsキーボードにはないキーの割り当ては次の通りです。
-|仮想フルキーボート|Windowsキー|
-| ------------ | ------------ |
-|ATN|Home|
-|LF(0Ah)|下向きカーソルキー|
-|HTAB(09h)|Tabキー又は上向きカーソルキー|
-
-　なお、WindowsキーボードのENTERはCR(0Dh)の入力となります。LF(0Ah)と混同しないにしてください。
-
-### Assembler
-　アセンブラの起動には巻末付録のユーティリティプログラムが必要です。
-
-　Ramda1Emulator.exeと同じフォルダにAssembler.binとUTILITY.binを置いてRamda1Emulatorを起動させると自動的に読み込みます。
-
-　CHICK-BUGが起動したらGコマンドでA000hにジャンプするとメニューが表示されるので5を選択するとAssemblerが起動します。
-
-![Assembler1](https://github.com/yanataka60/Ramda-1-Emulator/blob/main/PNG/Assembler1.png)
-
-![Assembler2](https://github.com/yanataka60/Ramda-1-Emulator/blob/main/PNG/Assembler2.png)
-
-![Assembler3](https://github.com/yanataka60/Ramda-1-Emulator/blob/main/PNG/Assembler3.png)
-
-### 電大版Tiny-Basic
-　電大版Tiny-Basicの起動には巻末付録のユーティリティプログラムが必要です。
-
-　Ramda1Emulator.exeと同じフォルダにTinyBasic.binを置いてRamda1Emulatorを起動させると自動的に読み込みます。
-
-　CHICK-BUGが起動したらGコマンドでA000hにジャンプするとメニューが表示されるので6を選択すると電大版Tiny-Basicが起動します。
-
-![Tint-Basic](https://github.com/yanataka60/Ramda-1-Emulator/blob/main/PNG/Tiny-Basic.png)
+　その状態でツールの「BASIC起動(D800H)」をクリックするとTV画面のWindowが開き、BASICが使えます。
