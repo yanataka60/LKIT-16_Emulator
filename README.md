@@ -170,3 +170,27 @@
 　MONITOR-ROMと同様にLkit16Emulator.exeと同じフォルダにBASIC-ROM1.Bin、BASIC-ROM2.Bin、TVFONT.binを置いておいてください。起動時に読み込まれます。
 
 　その状態でツールの「BASIC起動(D800H)」をクリックするとTV画面のWindowが開き、BASICが使えます。
+
+## CMTツール
+　実機とのCMT WAVデータとWindows PCが扱うバイナリデータと相互変換できるツールを作りました。
+### Wav2Bin
+　実機でCMTへのSAVE操作をした時のWAVファイルをWindows PCで扱うバイナリデータに変換します。
+
+　基本的な使い方は次の通りです。
+
+　例) lkit16_wav2bin 入力.wav 出力.bin
+
+### Bin2Wav
+　Windows PCで作成したバイナリファイルを実機でCMT LOAD操作で読み込めるWAVデータに変換します。
+
+　アドレス情報のない通常のbinファイルとLKIT-16_SDで扱うアドレス情報を持ったBTKファイルのどちらも変換できます。
+
+#### BTKファイル
+　アドレス情報を持っていますので入力.btk、出力.wavを指定するだけです。
+
+　例) lkit16_bin2wav 入力.btk 出力.wav
+
+#### BINファイル
+　アドレス情報を持っていないのでLOAD開始アドレスの指示が必要です。
+
+　例) lkit16_bin2wav 入力.bin 出力.wav --start 0040
