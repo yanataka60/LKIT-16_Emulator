@@ -2,7 +2,6 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
-#include <cmath>
 #include <cstring>
 #include <cwchar>
 #include <fstream>
@@ -188,20 +187,72 @@ public:
     bool intervalEnabled=false, level0Pending=false, level1Pending=false, level2Pending=false, timerIRQActive=false;
     bool stepSwitch=false, singleStepArmed=false, singleStepUserActive=false; // physical AUTO/STEP input and hardware step gate
     uint64_t timerElapsedClocks=0;
+    // Debug view follows the monitor save area, never its working registers.
+    bool debugUserRunning=false, debugSavePending=true, debugSavedValid=false;
+    bool debugStopped=false, debugResumeRequested=false;
+    uint64_t debugRunAt=0, debugRunReleaseAt=0;
+    bool showSavedRegisters() const {return stepSwitch || (!debugUserRunning && debugStopped);}
+    const std::array<uint16_t,8>& displayedRegisters() const {return showSavedRegisters()?debugSaved:r;}
+    uint8_t debugSaveMask=0;
+    std::array<uint16_t,8> debugSaved{};
+    void beginMonitorSave(){debugStopped=debugStopped || debugUserRunning;debugUserRunning=false;debugSavePending=true;debugSaveMask=0;}
+    void observeSavedRegister(uint16_t a,uint16_t v){
+        if(debugUserRunning || a<0x10 || a>0x17)return;
+        if(debugSavePending){
+            debugSaveMask|=uint8_t(1u<<(a-0x10));
+            if(debugSaveMask==0xff){
+                for(unsigned i=0;i<8;i++)debugSaved[i]=mem[0x10+i];
+                debugSaved[a-0x10]=v;
+                debugSavedValid=true;debugSavePending=false;
+            }
+        }else if(debugSavedValid)debugSaved[a-0x10]=v;
+    }
     uint64_t steps=0;
     static const char* rn(unsigned n){ static const char* s[]={"R0","R1","R2","R3","R4","SP","STR","IC"}; return s[n&7]; }
     static const char* sk(unsigned n){ static const char* s[]={"","SKP","M","PZ","Z","NZ","MZ","P","EZ","ENZ","OZ","ONZ","LMZ","LP","LPZ","LM"}; return s[n&15]; }
     uint16_t& IC(){return r[7];} uint16_t& STR(){return r[6];} uint16_t& SP(){return r[5];}
 
-    void reset(){ tv.reset();scaSound.reset(); setRegister(6,mem[0x0100]); IC()=mem[0x0101]; halted=false; steps=0; z=m=l=false; icmr=tobr=0; intervalEnabled=level0Pending=level1Pending=level2Pending=timerIRQActive=false; singleStepArmed=false; singleStepUserActive=false; timerElapsedClocks=0; port40Latch=0; scanSelect=0; displayFrame.fill(0); displayDirty=true; cmtIn=true; cmtOut=false; cmtCapture=false; emuClocks=0; cmtEdges.clear(); cmtPlayback=false; cmtPlayStart=0; cmtPlayIndex=0; cmtPlayInitial=true; cmtPlayEdges.clear(); }
+    void reset(){ debugStopped=false;debugResumeRequested=false;debugRunAt=debugRunReleaseAt=0;debugUserRunning=false;debugSavePending=true;debugSavedValid=false;debugSaveMask=0;debugSaved.fill(0); tv.reset();scaSound.reset(); setRegister(6,mem[0x0100]); IC()=mem[0x0101]; halted=false; steps=0; z=m=l=false; icmr=tobr=0; intervalEnabled=level0Pending=level1Pending=level2Pending=timerIRQActive=false; singleStepArmed=false; singleStepUserActive=false; timerElapsedClocks=0; port40Latch=0; scanSelect=0; displayFrame.fill(0); displayDirty=true; cmtIn=true; cmtOut=false; cmtCapture=false; emuClocks=0; cmtEdges.clear(); cmtPlayback=false; cmtPlayStart=0; cmtPlayIndex=0; cmtPlayInitial=true; cmtPlayEdges.clear(); }
     void requestLevel0(){ level0Pending=true; }
     void requestLevel2(){ level2Pending=true; }
     // Lkit-16 STOP/STEP shares the monitor Level-1 entry at NPSW1 (0102/0103).
-    void requestStop(){ timerIRQActive=false; level1Pending=true; }
+    void requestStop(){
+        debugResumeRequested=false;debugRunAt=0;
+        if(debugRunReleaseAt){pressedKey=-1;debugRunReleaseAt=0;}
+        timerIRQActive=false;level1Pending=true;halted=false;
+    }
+    bool canDebugStop() const {return debugUserRunning || debugResumeRequested || debugRunReleaseAt!=0;}
+    bool canDebugResume() const {return debugStopped && debugSavedValid && !debugSavePending && !debugUserRunning && !debugResumeRequested && !debugRunReleaseAt;}
+    bool canDebugStep() const {return (debugUserRunning || canDebugResume()) && !debugResumeRequested && !debugRunReleaseAt;}
+    void requestDebugStop(){
+        if(debugUserRunning)requestStop();
+        else{debugResumeRequested=false;debugRunAt=0;if(debugRunReleaseAt){pressedKey=-1;debugRunReleaseAt=0;}}
+    }
+    void requestDebugStep(){
+        if(!canDebugStep())return;
+        if(debugUserRunning)requestStop();
+        stepSwitch=true;debugResumeRequested=true;debugRunAt=0;
+    }
+    void requestDebugContinue(){
+        if(!canDebugResume())return;
+        stepSwitch=false;debugResumeRequested=true;debugRunAt=0;
+    }
+    void serviceDebugControls(){
+        if(debugRunReleaseAt && emuClocks>=debugRunReleaseAt){pressedKey=-1;debugRunReleaseAt=0;}
+        if(debugResumeRequested && debugStopped && !debugRunReleaseAt && !debugUserRunning && !debugSavePending && debugSavedValid){
+            // Allow the monitor to finish its save and return to key scanning.
+            if(!debugRunAt)debugRunAt=emuClocks+40000;
+            if(emuClocks>=debugRunAt){
+                pressedKey=1;debugRunReleaseAt=emuClocks+40000;
+                debugResumeRequested=false;debugRunAt=0;
+            }
+        }
+    }
     void enterInterrupt(unsigned level){
         // L-KIT-16 monitor ROM provides NPSW0..NPSW2 at 0100H..0105H.
         // 0106H is executable monitor initialization code, not an NPSW3 vector.
         if(level>2) return;
+        if(level==1 && !timerIRQActive)beginMonitorSave();
         const uint16_t opsw=uint16_t(level*2), npsw=uint16_t(0x0100+level*2);
         // MN1610: save current STR/IC to old PSW, then load the new PSW.
         mem[opsw]=STR(); mem[uint16_t(opsw+1)]=IC();
@@ -377,6 +428,7 @@ public:
     uint16_t read(uint16_t a) const { return mem[a]; }
     void write(uint16_t a,uint16_t v){
         if((a>=0x0100&&a<=0x08ff)||(basicRomLoaded&&a>=0xd800&&a<=0xdfff)) return;
+        observeSavedRegister(a,v);
         if(mem[a]==v) return;
         mem[a]=v;
         if(a>=0x001bu && a<=0x0022u){
@@ -540,6 +592,7 @@ public:
 
 
     bool step(){
+        serviceDebugControls();
         // Remember whether this instruction itself is the user instruction being
         // single-stepped.  LPSW 3 turns singleStepUserActive on during its own
         // execution, so testing the flag only at the end would incorrectly
@@ -596,6 +649,7 @@ public:
             // its setup and the next fetched instruction is the first user
             // instruction.  This replaces the old, incorrect pc>=1000 shortcut;
             // user programs at 0040H etc. must single-step as on real hardware.
+            if(psw==3 || (psw==1 && debugSavePending)){debugUserRunning=true;debugSavePending=false;debugStopped=false;}
             if(psw==3 && singleStepArmed) singleStepUserActive=true;
         }
         else { halted=true; } // MN1610 treats undefined instructions as H.
@@ -612,12 +666,9 @@ public:
         return true;
     }
 };
-static std::vector<MN1610::CmtEdge> decodeLegacyFskInput(const std::vector<int16_t>& pcm,uint32_t rate){
+static std::vector<MN1610::CmtEdge> decodeCmtInput(const std::vector<int16_t>& pcm,uint32_t rate){
     if(!rate) return {};
-    // Functional input model, not an electrical simulation of the circuit.
-    // Real SAVE recordings use about 3.08 kHz ON/OFF keying: carrier recovers
-    // LOW at 41H.D and no carrier restores HIGH after 1.2 ms. The same
-    // discriminator also accepts this emulator's legacy 1200/2400 Hz WAVs.
+    // Functional KCS discriminator, not an electrical model of the input circuit.
     // A retriggered 195 us pulse left short HIGH gaps even on a 2400 Hz MARK;
     // the ROM's two-point start test could mistake those gaps for a start bit.
     // Hold the recovered level after two consistent half-cycle measurements.
@@ -659,54 +710,6 @@ static std::vector<MN1610::CmtEdge> decodeLegacyFskInput(const std::vector<int16
         state=next;previous=pcm[i];
     }
     if(haveCrossing && !line) edges.push_back({lastCrossing+2400u,true});
-    return edges;
-}
-
-static std::vector<MN1610::CmtEdge> decodeCmtInput(const std::vector<int16_t>& pcm,uint32_t rate){
-    if(!rate || pcm.empty())return {};
-    // Difference-RMS rejects the slow DC/ringing tail in real cassette audio.
-    // A 1 ms detector window is short compared with the ROM's 9 ms data bits.
-    const size_t block=std::max<size_t>(8,size_t(std::lround(rate*0.001)));
-    const size_t count=pcm.size()/block;
-    if(count<3)return decodeLegacyFskInput(pcm,rate);
-    std::vector<double> levels(count);
-    for(size_t i=0;i<count;i++){
-        double sum=0;
-        for(size_t j=1;j<block;j++){
-            const double d=(double(pcm[i*block+j])-pcm[i*block+j-1])/32768.0;
-            sum+=d*d;
-        }
-        levels[i]=std::sqrt(sum/double(block-1));
-    }
-    auto sorted=levels;
-    const size_t q=size_t((count-1)*0.9);
-    std::nth_element(sorted.begin(),sorted.begin()+q,sorted.end());
-    // 0.3125 also tolerates the codec ringing in all 18 reference recordings.
-    const double threshold=sorted[q]*0.3125;
-    if(threshold<=1e-6)return {};
-    std::vector<bool> carrier(count);
-    for(size_t i=0;i<count;i++)carrier[i]=levels[i]>threshold;
-    for(size_t i=1;i+1<count;i++)
-        if(levels[i-1]>threshold && levels[i+1]>threshold)carrier[i]=true;
-    size_t changes=0,run=0;
-    bool leader=false;
-    for(size_t i=1;i<count;i++)if(carrier[i]!=carrier[i-1]){
-        changes++;
-        if(carrier[i-1] && double((i-run)*block)/rate>=1.0)leader=true;
-        run=i;
-    }
-    // Legacy FSK has continuous energy throughout its data, hence no OOK
-    // start/data gaps. Preserve compatibility with previously generated WAVs.
-    if(!leader || changes<8)return decodeLegacyFskInput(pcm,rate);
-    std::vector<MN1610::CmtEdge> edges;
-    bool line=true;
-    for(size_t i=0;i<count;i++){
-        const bool level=!carrier[i]; // carrier present -> port 41H.D LOW
-        if(level!=line){
-            line=level;edges.push_back({uint64_t(i*block)*2000000u/rate,line});
-        }
-    }
-    if(!line)edges.push_back({uint64_t(count*block)*2000000u/rate,true});
     return edges;
 }
 
@@ -854,15 +857,16 @@ static bool mountRealCassetteWav(HWND owner){
     MessageBoxW(owner,ss.str().c_str(),L"カセットWAV読込",MB_OK|MB_ICONINFORMATION); return true;
 }
 
-// All 18 supplied real-machine SAVE recordings recover as ON/OFF keying,
-// with a measured carrier of 3076.0-3079.5 Hz, not 1200/2400 Hz FSK.
-// 3078 Hz approximates those recordings; it is not a claimed circuit nominal.
-// The original ROM TSAVE still creates every framing/data/checksum bit.
-// Convert the captured 40H.C timeline to carrier ON/OFF without rebuilding it.
+// L-KIT16 cassette SAVE uses nominal KCS 1200/2400 Hz.
+// the nominal modulation frequencies.  Do not calibrate the specification from recording FFT peaks;
+// tape speed, recorder response and recording/codec effects may shift/weight measured peaks.
+// The real ROM TSAVE still supplies the logical 40H.C timeline and all framing/data.
+// The ROM TSAVE supplies the complete logical 40H.C timeline. The host only
+// converts that timeline to KCS carrier; it never rebuilds the tape format.
 static bool writeCmtWav(const std::filesystem::path& path,uint64_t startClock,uint64_t endClock,bool initialLevel,const std::vector<MN1610::CmtEdge>& edges){
     if(endClock<=startClock) return false;
     constexpr uint32_t RATE=44100;
-    constexpr double CARRIER_HZ=3078.0;
+    constexpr double KCS_SPACE_HZ=1200.0, KCS_MARK_HZ=2400.0;
     constexpr int AMP=18000;
     // Preserve the observed recording lead/trail silence only as file padding; it is not
     // used to redefine KCS carrier frequencies.
@@ -875,10 +879,12 @@ static bool writeCmtWav(const std::filesystem::path& path,uint64_t startClock,ui
     for(uint64_t j=0;j<core;j++){
         uint64_t clk=startClock+(j*2000000u)/RATE;
         while(ei<edges.size() && edges[ei].clocks<=clk){lev=edges[ei].level;++ei;}
-        // 40H.C LOW enables carrier (data 1); HIGH disables it (data 0).
-        // Keep oscillator phase continuous even while the output is gated off.
-        phase+=CARRIER_HZ/double(RATE); if(phase>=1.0) phase-=1.0;
-        pcm[(size_t)(pre+j)]=lev?int16_t(0):int16_t(std::lround(AMP*std::sin(2.0*3.14159265358979323846*phase)));
+        // 40H.C LOW is MARK (2400 Hz), HIGH is SPACE (1200 Hz).  This is only
+        // the external KCS modem polarity; the monitor ROM still creates all
+        // start/stop/data/checksum framing.
+        const double hz=lev?KCS_SPACE_HZ:KCS_MARK_HZ;
+        phase+=hz/double(RATE); if(phase>=1.0) phase-=1.0;
+        pcm[(size_t)(pre+j)]=(phase<0.5)?AMP:-AMP;
     }
     std::ofstream o(path,std::ios::binary); if(!o)return false;
     uint32_t dataBytes=(uint32_t)(pcm.size()*2), riff=36+dataBytes; uint16_t fmt=1,ch=1,bps=16,align=2; uint32_t br=RATE*2,fs=16;
@@ -949,7 +955,8 @@ static bool handlePcKeyboardMessage(const MSG& m){
     if(physical<0) return false;
     if(m.message==WM_KEYDOWN || m.message==WM_SYSKEYDOWN){
         g_pcKeyboardPhysicalKey=physical;
-        g_cpu.pressedKey=physical;
+        if(physical==0)g_cpu.requestStop();
+        else g_cpu.pressedKey=physical;
         g_keyReleaseTicks=0;
     } else if(g_pcKeyboardPhysicalKey==physical){
         if(g_cpu.pressedKey==physical) g_cpu.pressedKey=-1;
@@ -1330,31 +1337,110 @@ static void syncRegisterMenuCheck(bool shown){
     if(!g_mainWnd) return;
     HMENU m=GetMenu(g_mainWnd); if(m) CheckMenuItem(m,IDM_CPU_REGISTERS,MF_BYCOMMAND|(shown?MF_CHECKED:MF_UNCHECKED));
 }
+struct RegisterViewSnapshot {
+    std::array<uint16_t,8> regs{};
+    bool saved=false,valid=false;
+    unsigned state=0;
+    bool operator==(const RegisterViewSnapshot& other) const {
+        return regs==other.regs && saved==other.saved && valid==other.valid && state==other.state;
+    }
+};
+static RegisterViewSnapshot captureRegisterView(){
+    RegisterViewSnapshot view;
+    view.saved=g_cpu.showSavedRegisters();
+    view.valid=!view.saved || g_cpu.debugSavedValid;
+    if(view.valid)view.regs=g_cpu.displayedRegisters();
+    view.state=g_cpu.debugUserRunning?(g_cpu.halted?1u:0u):
+        (g_cpu.debugSavePending?2u:(g_cpu.stepSwitch?3u:4u));
+    return view;
+}
+struct RegisterWindowResources {
+    HFONT title=nullptr,mono=nullptr;
+    HBRUSH background=nullptr;
+    RegisterViewSnapshot painted;
+    bool hasPainted=false;
+    RegisterWindowResources(){
+        title=CreateFontW(20,0,0,0,FW_BOLD,FALSE,FALSE,FALSE,DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,CLEARTYPE_QUALITY,FIXED_PITCH|FF_MODERN,L"ＭＳ ゴシック");
+        mono=CreateFontW(19,0,0,0,FW_NORMAL,FALSE,FALSE,FALSE,DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,CLEARTYPE_QUALITY,FIXED_PITCH|FF_MODERN,L"ＭＳ ゴシック");
+        background=CreateSolidBrush(RGB(244,244,240));
+    }
+    ~RegisterWindowResources(){if(title)DeleteObject(title);if(mono)DeleteObject(mono);if(background)DeleteObject(background);}
+};
+static RegisterWindowResources* registerResources(HWND h){
+    return reinterpret_cast<RegisterWindowResources*>(GetWindowLongPtrW(h,GWLP_USERDATA));
+}
+static void updateRegisterButtons(HWND h){
+    const bool enabled[]={g_loaded&&g_cpu.canDebugStop(),g_loaded&&g_cpu.canDebugStep(),g_loaded&&g_cpu.canDebugResume()};
+    for(unsigned i=0;i<3;i++){
+        HWND button=GetDlgItem(h,1301+i);
+        if(button && (IsWindowEnabled(button)!=FALSE)!=enabled[i])EnableWindow(button,enabled[i]);
+    }
+}
 static void paintRegisterWindow(HWND h){
-    InvalidateRect(h,nullptr,FALSE);
+    updateRegisterButtons(h);
+    auto* resources=registerResources(h);
+    if(!resources || !resources->hasPainted || !(captureRegisterView()==resources->painted))
+        InvalidateRect(h,nullptr,FALSE);
 }
 static LRESULT CALLBACK RegisterWndProc(HWND h,UINT msg,WPARAM wp,LPARAM lp){
     switch(msg){
+    case WM_CREATE:
+        SetWindowLongPtrW(h,GWLP_USERDATA,reinterpret_cast<LONG_PTR>(new RegisterWindowResources));
+        CreateWindowW(L"BUTTON",L"STOP",WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_PUSHBUTTON,18,278,100,30,h,(HMENU)1301,GetModuleHandleW(nullptr),nullptr);
+        CreateWindowW(L"BUTTON",L"STEP",WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_PUSHBUTTON,132,278,100,30,h,(HMENU)1302,GetModuleHandleW(nullptr),nullptr);
+        CreateWindowW(L"BUTTON",L"CONT",WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_PUSHBUTTON,246,278,100,30,h,(HMENU)1303,GetModuleHandleW(nullptr),nullptr);
+        updateRegisterButtons(h);
+        return 0;
+    case WM_COMMAND:
+        if(HIWORD(wp)==BN_CLICKED && (LOWORD(wp)==1301 || LOWORD(wp)==1302 || LOWORD(wp)==1303)){
+            if(g_loaded){
+                if(LOWORD(wp)==1301)g_cpu.requestDebugStop();
+                else if(LOWORD(wp)==1302)g_cpu.requestDebugStep();
+                else g_cpu.requestDebugContinue();
+                InvalidateRect(g_mainWnd,nullptr,FALSE);paintRegisterWindow(h);
+            }
+            return 0;
+        }
+        break;
+    case WM_NCDESTROY:
+        delete registerResources(h);SetWindowLongPtrW(h,GWLP_USERDATA,0);break;
     case WM_CLOSE: ShowWindow(h,SW_HIDE); syncRegisterMenuCheck(false); return 0;
     case WM_SHOWWINDOW: syncRegisterMenuCheck(wp!=0); break;
     case WM_ERASEBKGND: return 1;
     case WM_PAINT:{
         PAINTSTRUCT ps; HDC dc=BeginPaint(h,&ps); RECT rc; GetClientRect(h,&rc);
-        HBRUSH bg=CreateSolidBrush(RGB(244,244,240)); FillRect(dc,&rc,bg); DeleteObject(bg);
-        SetBkMode(dc,TRANSPARENT); SetTextColor(dc,RGB(25,25,25));
-        HFONT title=CreateFontW(20,0,0,0,FW_BOLD,FALSE,FALSE,FALSE,DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,CLEARTYPE_QUALITY,FIXED_PITCH|FF_MODERN,L"ＭＳ ゴシック");
-        HFONT mono=CreateFontW(19,0,0,0,FW_NORMAL,FALSE,FALSE,FALSE,DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,CLEARTYPE_QUALITY,FIXED_PITCH|FF_MODERN,L"ＭＳ ゴシック");
-        HGDIOBJ old=SelectObject(dc,title); const wchar_t* heading=L"MN1610 CPUレジスタ";TextOutW(dc,18,14,heading,(int)wcslen(heading)); SelectObject(dc,mono);
+        auto* resources=registerResources(h);
+        if(!resources){EndPaint(h,&ps);return 0;}
+        const auto view=captureRegisterView();
+        FillRect(dc,&rc,resources->background?resources->background:(HBRUSH)GetStockObject(WHITE_BRUSH));
+        SetBkMode(dc,TRANSPARENT);SetTextColor(dc,RGB(25,25,25));
+        HGDIOBJ old=SelectObject(dc,resources->title?resources->title:GetStockObject(DEFAULT_GUI_FONT));
+        const wchar_t* heading=L"MN1610 CPUレジスタ";TextOutW(dc,18,14,heading,(int)wcslen(heading));
+        SelectObject(dc,resources->mono?resources->mono:GetStockObject(DEFAULT_GUI_FONT));
         wchar_t line[256]; int y=50;
+        const bool saved=view.saved;
+        const bool valid=view.valid;
+        const auto& regs=view.regs;
         for(int i=0;i<8;i+=2){
-            swprintf_s(line,L"%-3S = %04X        %-3S = %04X",MN1610::rn(i),g_cpu.r[i],MN1610::rn(i+1),g_cpu.r[i+1]);
+            if(valid)
+                swprintf_s(line,L"%-3S = %04X        %-3S = %04X",MN1610::rn(i),regs[i],MN1610::rn(i+1),regs[i+1]);
+            else swprintf_s(line,L"%-3S = ----        %-3S = ----",MN1610::rn(i),MN1610::rn(i+1));
             TextOutW(dc,18,y,line,(int)wcslen(line)); y+=30;
         }
         y+=4;
-        swprintf_s(line,L"E=%d  OVF=%d  Z=%d  M=%d  L=%d",g_cpu.eFlag()?1:0,g_cpu.ovFlag()?1:0,g_cpu.z?1:0,g_cpu.m?1:0,g_cpu.l?1:0); TextOutW(dc,18,y,line,(int)wcslen(line)); y+=30;
-        swprintf_s(line,L"ICMR=%02X  TOBR=%02X  STEP=%s",g_cpu.icmr,g_cpu.tobr,g_cpu.stepSwitch?L"ON":L"AUTO"); TextOutW(dc,18,y,line,(int)wcslen(line)); y+=30;
-        swprintf_s(line,L"状態=%s   実行命令数=%llu",g_cpu.halted?L"停止":L"実行中",(unsigned long long)g_cpu.steps); TextOutW(dc,18,y,line,(int)wcslen(line));
-        SelectObject(dc,old); DeleteObject(title); DeleteObject(mono); EndPaint(h,&ps); return 0; }
+        if(valid){
+            const uint16_t str=regs[6];
+            swprintf_s(line,L"STR: E=%d  OVF=%d",(str&MN1610::STR_E)?1:0,(str&MN1610::STR_OVF)?1:0);
+        }else swprintf_s(line,L"保存STR: 未確定");
+        TextOutW(dc,18,y,line,(int)wcslen(line)); y+=30;
+        static const wchar_t* states[]={L"ユーザープログラム実行中",L"ユーザーCPU停止（HALT）",
+            L"モニタ実行中（レジスタ保存中）",L"モニタ実行中（STEP待機）",L"モニタ実行中（操作待ち）"};
+        const wchar_t* state=states[view.state];
+        TextOutW(dc,18,y,state,(int)wcslen(state)); y+=30;
+        const wchar_t* source=saved?(valid?L"表示: モニタ保存値 0010H～0017H":L"表示: モニタの保存完了待ち"):
+            L"表示: CPU現在値（常時更新）";
+        TextOutW(dc,18,y,source,(int)wcslen(source));
+        SelectObject(dc,old);EndPaint(h,&ps);resources->painted=view;resources->hasPainted=true;return 0; }
     }
     return DefWindowProcW(h,msg,wp,lp);
 }
@@ -1525,7 +1611,7 @@ static LRESULT CALLBACK WndProc(HWND h,UINT msg,WPARAM wp,LPARAM lp){
    else if(id==IDM_CMT_LOAD_WAV){ mountRealCassetteWav(h); }
    else if(id==IDM_CMT_SAVE_WAV){ armCmtSave(h); }
    else if(id==IDM_DIRECT_BIN){ if(g_binWnd && IsWindowVisible(g_binWnd)){ ShowWindow(g_binWnd,SW_HIDE); syncBinMenuCheck(false); } else showDirectBinWindow(); }
-   else if(id==IDM_BASIC_START){if(!g_cpu.basicRomLoaded){MessageBoxW(h,L"BASIC-ROM1.bin（2048バイト）とBASIC-ROM2.bin（4096バイト）を、エミュレータのEXEと同じフォルダに配置してください。",L"BASIC ROMエラー",MB_OK|MB_ICONERROR);}else{selectScaSound(false);g_cpu.reset();for(unsigned i=0;i<100000&&!g_cpu.halted;i++)g_cpu.step();g_cpu.SP()=0x10ff;g_cpu.STR()=0x0700;g_cpu.IC()=0xd800;g_cpu.halted=false;ShowWindow(g_tvWnd,SW_SHOW);SetFocus(g_tvWnd);CheckMenuItem(GetMenu(h),IDM_TV,MF_BYCOMMAND|MF_CHECKED);}}
+   else if(id==IDM_BASIC_START){if(!g_cpu.basicRomLoaded){MessageBoxW(h,L"BASIC-ROM1.bin（2048バイト）とBASIC-ROM2.bin（4096バイト）を、エミュレータのEXEと同じフォルダに配置してください。",L"BASIC ROMエラー",MB_OK|MB_ICONERROR);}else{selectScaSound(false);g_cpu.reset();for(unsigned i=0;i<100000&&!g_cpu.halted;i++)g_cpu.step();g_cpu.SP()=0x10ff;g_cpu.STR()=0x0700;g_cpu.IC()=0xd800;g_cpu.debugUserRunning=true;g_cpu.debugSavePending=false;g_cpu.halted=false;ShowWindow(g_tvWnd,SW_SHOW);SetFocus(g_tvWnd);CheckMenuItem(GetMenu(h),IDM_TV,MF_BYCOMMAND|MF_CHECKED);}}
    else if(id==IDM_TV_FONT_CREATE){createTvFontFile(h);}
    else if(id==IDM_TV_FONT_RELOAD){reloadTvFontFile(h);}
    else if(id==IDM_SCA_SOUND){selectScaSound(!g_cpu.scaSound.enabled);}
@@ -1597,7 +1683,7 @@ int WINAPI wWinMain(HINSTANCE hi,HINSTANCE,LPWSTR,int show){
  SendMessageW(g_mainWnd,WM_SETICON,ICON_BIG,(LPARAM)hIconLarge);
  SendMessageW(g_mainWnd,WM_SETICON,ICON_SMALL,(LPARAM)hIconSmall);
  g_binWnd=CreateWindowW(bw.lpszClassName,L"L-KIT-16 BIN／BTK メモリ入出力",WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU|WS_MINIMIZEBOX,CW_USEDEFAULT,CW_USEDEFAULT,730,290,g_mainWnd,nullptr,hi,nullptr);
- g_regWnd=CreateWindowW(rw.lpszClassName,L"L-KIT-16 CPUレジスタ",WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU|WS_MINIMIZEBOX,CW_USEDEFAULT,CW_USEDEFAULT,430,300,g_mainWnd,nullptr,hi,nullptr);
+ g_regWnd=CreateWindowW(rw.lpszClassName,L"L-KIT-16 CPUレジスタ",WS_CLIPCHILDREN|WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU|WS_MINIMIZEBOX,CW_USEDEFAULT,CW_USEDEFAULT,480,370,g_mainWnd,nullptr,hi,nullptr);
  g_tvWnd=CreateWindowW(tw.lpszClassName,L"L-KIT-16 テレビ画面（TVIF）",WS_OVERLAPPEDWINDOW,CW_USEDEFAULT,CW_USEDEFAULT,760,440,g_mainWnd,nullptr,hi,nullptr);
  updateTvFontTitle();
  ShowWindow(g_mainWnd,show); MSG m; while(GetMessageW(&m,nullptr,0,0)){
