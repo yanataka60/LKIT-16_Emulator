@@ -1,4 +1,6 @@
 # PANAFACOM LKIT-16 EMULATOR
+![LKIT-16](https://github.com/yanataka60/LKIT-16_Emulator/blob/main/PNG/MAIN%20PANEL.png)
+
 　PANAFACOM LKIT-16のEmulatorを作ってみました。
 
 　動作には実機のMonitor-ROMのバイナリファイルが必要です。
@@ -113,7 +115,7 @@
 
 　起動した状態でメインパネルが操作可能になります。
 
-![Ramda-1](https://github.com/yanataka60/Ramda-1-Emulator/blob/main/PNG/MAIN%20PANEL.png)
+![LKIT-16](https://github.com/yanataka60/LKIT-16_Emulator/blob/main/PNG/MAIN%20PANEL.png)
 
 　メインパネルの操作はマウスでのクリック操作となりますが、メインパネルがアクティブなときには次のキーがWindowsキーボードに割り当てられています。
 
@@ -142,9 +144,11 @@
 ### ファイル入出力
 　バイナリファイルの読込、保存の方法は二通りの方法があります。
 
-![Memory INOUT](https://github.com/yanataka60/Ramda-1-Emulator/blob/main/PNG/Memory%20INOUT.png)
 #### BIN/BTKメモリ入出力
 　バイナリファイルを直接RAMにロード、RAMからセーブします。
+
+![Memory INOUT](https://github.com/yanataka60/LKIT-16_Emulator/blob/main/PNG/MEMORY%20IO.png)
+
 ##### BIN読込
 　BIN読込開始アドレスを16進数4桁で指定して拡張子binのバイナリファイルをLOADします。
 ##### BTK読込
@@ -162,14 +166,21 @@
 
 　ファイルはWAVファイルとなります。
 
-![CMT](https://github.com/yanataka60/Ramda-1-Emulator/blob/main/PNG/CMT.png)
-
 ### BASIC起動
 　BASIC-ROMのバイナリファイル、CG-ROMのバイナリファイルが必要です。
 
 　MONITOR-ROMと同様にLkit16Emulator.exeと同じフォルダにBASIC-ROM1.Bin、BASIC-ROM2.Bin、TVFONT.binを置いておいてください。起動時に読み込まれます。
 
 　その状態でツールの「BASIC起動(D800H)」をクリックするとTV画面のWindowが開き、BASICが使えます。
+
+![BASIC](https://github.com/yanataka60/LKIT-16_Emulator/blob/main/PNG/BASIC.png)
+
+### CPUレジスタ表示
+　CPUの現在のレジスタ値が表示されます。ユーザープログラム実行中であれば、任意にSTOPが出来、STEP動作も可能です。
+
+　また、CONTをクリックすることで再開することも可能です。
+
+![REGISTER](https://github.com/yanataka60/LKIT-16_Emulator/blob/main/PNG/REGISTER.png)
 
 ## CMTツール
 　実機とのCMT WAVデータとWindows PCが扱うバイナリデータと相互変換できるツールを作りました。
